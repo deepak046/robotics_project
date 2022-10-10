@@ -2,13 +2,15 @@
 # sprague@kth.se
 # Behaviours needed for the example student solution.
 
+import numpy as np
+from numpy import linalg as LA
 
 import py_trees as pt, py_trees_ros as ptr, rospy
 from geometry_msgs.msg import Twist
 from actionlib import SimpleActionClient
 from play_motion_msgs.msg import PlayMotionAction, PlayMotionGoal
 from robotics_project.srv import MoveHead, MoveHeadRequest, MoveHeadResponse
-from geometry_msgs.msg import PoseStamped, Twist
+from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped, Twist
 from std_srvs.srv import Empty, SetBool, SetBoolRequest  
 
 class counter(pt.behaviour.Behaviour):
@@ -314,3 +316,73 @@ class pick_and_place(pt.behaviour.Behaviour):
             # if still trying
             else:
                 return pt.common.Status.RUNNING
+
+
+class localize(pt.behaviour.Behaviour):
+
+    """
+    Globally localizes the robot in the environment.
+    Returns running whilst awaiting the result,
+    success if the action was succesful, and v.v..
+    """
+
+    def __init__(self):
+
+        rospy.loginfo("Initialising move head behaviour.")
+
+        # Global localization server
+        self.global_loc_srv_nm = rospy.get_param(rospy.get_name() + '/global_loc_srv')
+        self.global_loc_srv = rospy.ServiceProxy(self.global_loc_srv_nm, Empty)
+
+        # Move topic 
+
+        self.cmd_vel_top = rospy.get_param(rospy.get_name() + '/cmd_vel_topic')
+        self.cmd_vel_pub = rospy.Publisher(self.cmd_vel_top, Twist, queue_size=10)
+        self.move_msg = Twist()
+        self.move_msg.linear.x = 0
+        self.move_msg.angular.z = 0.5
+
+        self.localized = False
+
+        # AMCL pose estimate topic with covariance
+        self.threshold = 0.1
+        self.covar = 10000
+
+        self.amcl_pose_top = rospy.get_param(rospy.get_name() + '/amcl_estimate')
+        self.amcl_pose_sub = rospy.Subscriber(self.amcl_pose_top, PoseWithCovarianceStamped, self.amcl_pose_cb)
+        
+
+        rospy.wait_for_service(self.global_loc_srv_nm, timeout=10)
+        
+        self.global_loc_srv()
+        
+        # become a behaviour
+        super(localize, self).__init__("Localize!")
+    
+    def amcl_pose_cb(self, pose_msg):
+        self.covar = np.reshape(pose_msg.pose.covariance, (6,6))
+
+    def reset(self):
+        if self.localized == False:
+            self.global_loc_srv()
+        
+
+    def update(self):
+
+        try:
+            #rate = rospy.Rate(10)
+            #self.amcl_pose_msg = rospy.wait_for_message(self.amcl_pose_top, PoseWithCovarianceStamped, timeout=5) 
+            if self.localized == False:
+                self.cmd_vel_pub.publish(self.move_msg)
+            #rate.sleep()
+            #rospy.loginfo("COVARIANCE: %s", self.covar)
+            #covar = np.reshape(self.amcl_pose_msg.pose.covariance, (6,6))
+            if np.trace(self.covar) < self.threshold:
+                self.localized = True
+                return pt.common.Status.SUCCESS
+            else:
+                self.localized = False
+                self.reset()
+            return pt.common.Status.RUNNING
+        except:
+            return pt.common.Status.FAILURE
