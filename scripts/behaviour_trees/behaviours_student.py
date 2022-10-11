@@ -407,30 +407,38 @@ class localize(pt.behaviour.Behaviour):
 class navigate(pt.behaviour.Behaviour):
 
     """
-    Globally localizes the robot in the environment.
+    Navigates the robot to a given pose in the environment.
     Returns running whilst awaiting the result,
     success if the action was succesful, and v.v..
     """
 
-    def __init__(self, name, pose):
-        #
-        self.move_client = SimpleActionClient('move_base', MoveBaseAction)
+    def __init__(self, name, pose_msg):
+        print("INITIALIZING NAVIGATION BEHAVIOUR")
+        # Action client to request move action
+        self.move_client = SimpleActionClient('/move_base', MoveBaseAction)
+        # Initialise subscriber to feedback of the move_base action
         self.move_feedback_top = rospy.get_param(rospy.get_name() + '/move_base_feedback')
         self.move_feedback_sub = rospy.Subscriber(self.move_feedback_top, MoveBaseActionFeedback, self.move_feedback_cb)
 
-        self.goal_pose = pose
+        self.goal_pose = pose_msg.pose
+        self.current_pose = None
         self.pose_error = None
+        self.threshold = 0.1
+        print("INITIALIZING NAVIGATION BEHAVIOUR 2")
         try:
-            # Get path from actget_setpointion server
+            
+            # send goal to move_base server
             self.move_client.wait_for_server()
 
-            goal = MoveBaseGoal(pose)
+            print("INITIALIZING NAVIGATION BEHAVIOUR 3")
+            goal = MoveBaseGoal(pose_msg)
 
             self.move_client.send_goal(goal)
-            self.move_client.wait_for_result()
+
+            print("SENT GOAL TO MOVE_BASE ACTION")
             
         except rospy.ROSInterruptException:
-            print("Program interrupted.")
+            rospy.loginfo("Failed to send goal to move_base action.")
 
             super().__init__(name)
     
@@ -445,3 +453,6 @@ class navigate(pt.behaviour.Behaviour):
         if self.pose_error < self.threshold:
             self.move_client.cancel_goal()
             return pt.common.Status.SUCCESS
+
+        else:
+            return pt.common.Status.RUNNING

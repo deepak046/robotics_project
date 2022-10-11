@@ -8,10 +8,19 @@ class BehaviourTree(ptr.trees.BehaviourTree):
 
 	def __init__(self):
 
+		self.pick_pose_top = rospy.get_param(rospy.get_name() + '/pick_pose_topic')
+		self.place_pose_top = rospy.get_param(rospy.get_name() + '/place_pose_topic')
+
+		self.pick_pose_msg = rospy.wait_for_message(self.pick_pose_top, PoseStamped, timeout=5)
+		self.place_pose_msg = rospy.wait_for_message(self.place_pose_top, PoseStamped, timeout=5)
+
 		rospy.loginfo("Initialising behaviour tree")
 
 		# Localize
 		b_1 = localize()
+
+		# Navigate to pick pose
+		b_2 = navigate("Move to pick pose", self.pick_pose_msg)
 		# tuck arm
 		b0 = tuckarm()
 
@@ -74,7 +83,7 @@ class BehaviourTree(ptr.trees.BehaviourTree):
 		)
 
 		# become the tree
-		tree = RSequence(name="Main sequence", children=[b_1, move_straight_2, tuckarm(), tuckarm(), tuckarm()])#children=[b0, b1, b3, b4, move_table_2, b6])
+		tree = RSequence(name="Main sequence", children=[b_1, b_2, tuckarm(), tuckarm(), tuckarm()])#children=[b0, b1, b3, b4, move_table_2, b6])
 		super(BehaviourTree, self).__init__(tree)
 
 		# execute the behaviour tree
