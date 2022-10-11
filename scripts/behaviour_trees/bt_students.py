@@ -83,7 +83,7 @@ class BehaviourTree(ptr.trees.BehaviourTree):
 		)
 
 		# become the tree
-		tree = RSequence(name="Main sequence", children=[b_1, b_2, tuckarm(), tuckarm(), tuckarm()])#children=[b0, b1, b3, b4, move_table_2, b6])
+		tree = RSequence(name="Main sequence", children=[tuckarm(), b_1, b_2, tuckarm(), tuckarm(), tuckarm()])#children=[b0, b1, b3, b4, move_table_2, b6])
 		super(BehaviourTree, self).__init__(tree)
 
 		# execute the behaviour tree
