@@ -74,13 +74,13 @@ class BehaviourTree(ptr.trees.BehaviourTree):
 		)
 
 		# become the tree
-		tree = RSequence(name="Main sequence", children=[b_1, b0])#children=[b0, b1, b3, b4, move_table_2, b6])
+		tree = RSequence(name="Main sequence", children=[b_1, tuckarm(), tuckarm(), tuckarm()])#children=[b0, b1, b3, b4, move_table_2, b6])
 		super(BehaviourTree, self).__init__(tree)
 
 		# execute the behaviour tree
 		rospy.sleep(5)
 		self.setup(timeout=10000)
-		while not rospy.is_shutdown(): self.tick_tock(1)	
+		while not rospy.is_shutdown(): self.tick_tock(1)
 
 if __name__ == "__main__":
 

@@ -343,46 +343,61 @@ class localize(pt.behaviour.Behaviour):
         self.move_msg.angular.z = 0.5
 
         self.localized = False
+        self.call_service = True
+        self.counter = 0
 
         # AMCL pose estimate topic with covariance
-        self.threshold = 0.1
+        self.threshold = 0.05
         self.covar = 10000
 
         self.amcl_pose_top = rospy.get_param(rospy.get_name() + '/amcl_estimate')
-        self.amcl_pose_sub = rospy.Subscriber(self.amcl_pose_top, PoseWithCovarianceStamped, self.amcl_pose_cb)
+        #self.amcl_pose_sub = rospy.Subscriber(self.amcl_pose_top, PoseWithCovarianceStamped, self.amcl_pose_cb)
         
 
         rospy.wait_for_service(self.global_loc_srv_nm, timeout=10)
         
-        self.global_loc_srv()
+        # self.global_loc_srv()
         
         # become a behaviour
         super(localize, self).__init__("Localize!")
     
-    def amcl_pose_cb(self, pose_msg):
-        self.covar = np.reshape(pose_msg.pose.covariance, (6,6))
+    # def amcl_pose_cb(self, pose_msg):
+    #     self.covar = np.reshape(pose_msg.pose.covariance, (6,6))
 
-    def reset(self):
-        if self.localized == False:
+    def initialise(self):
+        if self.call_service and not(self.localized):
             self.global_loc_srv()
+            self.call_service = False
         
 
     def update(self):
 
         try:
-            #rate = rospy.Rate(10)
-            #self.amcl_pose_msg = rospy.wait_for_message(self.amcl_pose_top, PoseWithCovarianceStamped, timeout=5) 
+            rate = rospy.Rate(10)
+            self.amcl_pose_msg = rospy.wait_for_message(self.amcl_pose_top, PoseWithCovarianceStamped, timeout=5) 
+            self.covar = np.reshape(self.amcl_pose_msg.pose.covariance, (6,6))
             if self.localized == False:
                 self.cmd_vel_pub.publish(self.move_msg)
-            #rate.sleep()
+                self.counter += 1
+            rate.sleep()
             #rospy.loginfo("COVARIANCE: %s", self.covar)
             #covar = np.reshape(self.amcl_pose_msg.pose.covariance, (6,6))
+            print("COVARIANCE", np.trace(self.covar))
             if np.trace(self.covar) < self.threshold:
                 self.localized = True
-                return pt.common.Status.SUCCESS
+                self.call_service = True
+                self.counter = 0
+                return pt.common.Status.RUNNING
             else:
                 self.localized = False
-                self.reset()
-            return pt.common.Status.RUNNING
+                if self.counter > 120:
+                    self.counter = 0
+                    self.call_service = True
+                if self.call_service:
+                    return pt.common.Status.FAILURE
+
+                return pt.common.Status.RUNNING
         except:
             return pt.common.Status.FAILURE
+
+
