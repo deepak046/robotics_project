@@ -345,6 +345,7 @@ class localize(pt.behaviour.Behaviour):
 
         self.localized = False
         self.call_service = True
+        # Counter to reset localization service if the robot doesn't localize before a given amount of time
         self.counter = 0
 
         # AMCL pose estimate topic with covariance
@@ -381,8 +382,7 @@ class localize(pt.behaviour.Behaviour):
                 self.cmd_vel_pub.publish(self.move_msg)
                 self.counter += 1
             rate.sleep()
-            #rospy.loginfo("COVARIANCE: %s", self.covar)
-            #covar = np.reshape(self.amcl_pose_msg.pose.covariance, (6,6))
+
             print("COVARIANCE", np.trace(self.covar))
             if np.trace(self.covar) < self.threshold:
                 self.localized = True
@@ -414,24 +414,48 @@ class navigate(pt.behaviour.Behaviour):
 
     def __init__(self, name, pose_msg):
         print("INITIALIZING NAVIGATION BEHAVIOUR")
+        
         # Action client to request move action
         self.move_client = SimpleActionClient('/move_base', MoveBaseAction)
+
         # Initialise subscriber to feedback of the move_base action
         self.move_feedback_top = rospy.get_param(rospy.get_name() + '/move_base_feedback')
         self.move_feedback_sub = rospy.Subscriber(self.move_feedback_top, MoveBaseActionFeedback, self.move_feedback_cb)
 
+        self.goal_pose_msg = pose_msg
         self.goal_pose = pose_msg.pose
         self.current_pose = None
         self.pose_error = None
         self.threshold = 0.1
+        
         print("INITIALIZING NAVIGATION BEHAVIOUR 2")
-        try:
+        
+        # try: 
+        #     # send goal to move_base server
+        #     self.move_client.wait_for_server()
+
+        #     print("INITIALIZING NAVIGATION BEHAVIOUR 3")
+        #     goal = MoveBaseGoal(pose_msg)
+
+        #     self.move_client.send_goal(goal)
+
+        #     print("SENT GOAL TO MOVE_BASE ACTION")
             
+        # except rospy.ROSInterruptException:
+        #     rospy.loginfo("Failed to send goal to move_base action.")
+
+        super(navigate, self).__init__(name)
+    
+    def move_feedback_cb(self, move_feedback):
+        self.current_pose = move_feedback.feedback.base_position.pose
+
+    def initialise(self):
+        try: 
             # send goal to move_base server
             self.move_client.wait_for_server()
 
             print("INITIALIZING NAVIGATION BEHAVIOUR 3")
-            goal = MoveBaseGoal(pose_msg)
+            goal = MoveBaseGoal(self.goal_pose_msg)
 
             self.move_client.send_goal(goal)
 
@@ -440,13 +464,14 @@ class navigate(pt.behaviour.Behaviour):
         except rospy.ROSInterruptException:
             rospy.loginfo("Failed to send goal to move_base action.")
 
-            super().__init__(name)
-    
-    def move_feedback_cb(self, move_feedback):
-        self.current_pose = move_feedback.base_position.pose
+        return
 
     def update(self):
-        self.position_error = LA.norm(self.current_pose.position - self.goal_pose.position)
+        current_position = self.current_pose.position
+        print("CURRENT POSITION", current_position)
+        goal_position = self.goal_pose.position
+        print("GOAL POSITION", goal_position)
+        self.position_error = LA.norm(current_position - goal_position)
         self.orientation_error = LA.norm(self.current_pose.orientation - self.goal_pose.orientation)
         self.pose_error = np.sqrt(self.position_error**2 + self.orientation_error**2)
 
