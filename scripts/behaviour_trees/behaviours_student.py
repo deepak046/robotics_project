@@ -411,7 +411,6 @@ class navigate(pt.behaviour.Behaviour):
     Returns running whilst awaiting the result,
     success if the action was succesful, and v.v..
     """
-
     def __init__(self, name, pose_msg):
         print("INITIALIZING NAVIGATION BEHAVIOUR")
         
@@ -464,7 +463,14 @@ class navigate(pt.behaviour.Behaviour):
         except rospy.ROSInterruptException:
             rospy.loginfo("Failed to send goal to move_base action.")
 
+<<<<<<< HEAD
         return
+=======
+        super(navigate, self).__init__(name)
+    
+    def move_feedback_cb(self, move_feedback):
+        self.current_pose = move_feedback.feedback.base_position.pose
+>>>>>>> d41cc8235dbac0fca3e38eaccd1ef11fb7b85d66
 
     def update(self):
         current_position = self.current_pose.position
