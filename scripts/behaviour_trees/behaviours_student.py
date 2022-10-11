@@ -12,6 +12,7 @@ from play_motion_msgs.msg import PlayMotionAction, PlayMotionGoal
 from robotics_project.srv import MoveHead, MoveHeadRequest, MoveHeadResponse
 from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped, Twist
 from std_srvs.srv import Empty, SetBool, SetBoolRequest  
+from move_base_msgs.msg import MoveBaseAction, MoveBaseGoal, MoveBaseActionFeedback
 
 class counter(pt.behaviour.Behaviour):
 
@@ -340,14 +341,14 @@ class localize(pt.behaviour.Behaviour):
         self.cmd_vel_pub = rospy.Publisher(self.cmd_vel_top, Twist, queue_size=10)
         self.move_msg = Twist()
         self.move_msg.linear.x = 0
-        self.move_msg.angular.z = 0.5
+        self.move_msg.angular.z = 0.35
 
         self.localized = False
         self.call_service = True
         self.counter = 0
 
         # AMCL pose estimate topic with covariance
-        self.threshold = 0.05
+        self.threshold = 0.025
         self.covar = 10000
 
         self.amcl_pose_top = rospy.get_param(rospy.get_name() + '/amcl_estimate')
@@ -387,10 +388,12 @@ class localize(pt.behaviour.Behaviour):
                 self.localized = True
                 self.call_service = True
                 self.counter = 0
-                return pt.common.Status.RUNNING
+                print("SUCCCCCEEEEESSSSSSS")
+                return pt.common.Status.SUCCESS
+                
             else:
                 self.localized = False
-                if self.counter > 120:
+                if self.counter > 150:
                     self.counter = 0
                     self.call_service = True
                 if self.call_service:
@@ -401,3 +404,44 @@ class localize(pt.behaviour.Behaviour):
             return pt.common.Status.FAILURE
 
 
+class navigate(pt.behaviour.Behaviour):
+
+    """
+    Globally localizes the robot in the environment.
+    Returns running whilst awaiting the result,
+    success if the action was succesful, and v.v..
+    """
+
+    def __init__(self, name, pose):
+        #
+        self.move_client = SimpleActionClient('move_base', MoveBaseAction)
+        self.move_feedback_top = rospy.get_param(rospy.get_name() + '/move_base_feedback')
+        self.move_feedback_sub = rospy.Subscriber(self.move_feedback_top, MoveBaseActionFeedback, self.move_feedback_cb)
+
+        self.goal_pose = pose
+        self.pose_error = None
+        try:
+            # Get path from actget_setpointion server
+            self.move_client.wait_for_server()
+
+            goal = MoveBaseGoal(pose)
+
+            self.move_client.send_goal(goal)
+            self.move_client.wait_for_result()
+            
+        except rospy.ROSInterruptException:
+            print("Program interrupted.")
+
+            super().__init__(name)
+    
+    def move_feedback_cb(self, move_feedback):
+        self.current_pose = move_feedback.base_position.pose
+
+    def update(self):
+        self.position_error = LA.norm(self.current_pose.position - self.goal_pose.position)
+        self.orientation_error = LA.norm(self.current_pose.orientation - self.goal_pose.orientation)
+        self.pose_error = np.sqrt(self.position_error**2 + self.orientation_error**2)
+
+        if self.pose_error < self.threshold:
+            self.move_client.cancel_goal()
+            return pt.common.Status.SUCCESS
