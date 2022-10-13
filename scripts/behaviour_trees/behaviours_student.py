@@ -352,12 +352,16 @@ class localize(pt.behaviour.Behaviour):
         self.global_loc_srv_nm = rospy.get_param(rospy.get_name() + '/global_loc_srv')
         self.global_loc_srv = rospy.ServiceProxy(self.global_loc_srv_nm, Empty)
 
+        # Clear costmap service
+        self.clear_cm_srv_nm = rospy.get_param(rospy.get_name() + '/clear_costmaps_srv')
+        self.clear_cm_srv = rospy.ServiceProxy(self.clear_cm_srv_nm, Empty)
+
         # Move topic 
         self.cmd_vel_top = rospy.get_param(rospy.get_name() + '/cmd_vel_topic')
         self.cmd_vel_pub = rospy.Publisher(self.cmd_vel_top, Twist, queue_size=10)
         self.move_msg = Twist()
         self.move_msg.linear.x = 0
-        self.move_msg.angular.z = 0.4
+        self.move_msg.angular.z = 0.45
 
         # Subscribe to amcl topic to get the latest amcl estimate
         self.amcl_pose_top = rospy.get_param(rospy.get_name() + '/amcl_estimate')
@@ -370,7 +374,7 @@ class localize(pt.behaviour.Behaviour):
         self.counter = 0
 
         # Threshold for convergence and covariance of amcl pose
-        self.threshold = 0.04
+        self.threshold = 0.05
         self.covar = None
 
         rospy.wait_for_service(self.global_loc_srv_nm, timeout=10)
@@ -385,7 +389,10 @@ class localize(pt.behaviour.Behaviour):
     def initialise(self):
         # spread out particles if not localized and call_service is true
         if self.call_service and not(self.localized):
+            # Spread out particles to start localization
             self.global_loc_srv()
+            # Clear costmap to make sure that navigatino finds a path
+            self.clear_cm_srv()
             self.call_service = False
         
     def update(self):
@@ -407,7 +414,7 @@ class localize(pt.behaviour.Behaviour):
                 
             else:
                 self.localized = False
-                if self.counter > 200:
+                if self.counter > 170:
                     self.counter = 0
                     self.call_service = True
                 if self.call_service:
@@ -459,9 +466,12 @@ class navigate(pt.behaviour.Behaviour):
 
         global reset_var
         if reset_var:
+            print("RESETTETTED!!!!")
             self.navigation_result_status = None
             self.finished = False
             self.sent_goal = False
+            reset_var = False
+            return pt.common.Status.FAILURE
 
         # if already at goal
         if self.finished:
@@ -502,14 +512,16 @@ class reset(pt.behaviour.Behaviour):
     def __init__(self):
         super(reset, self).__init__()
 
-    def terminate(self):
+    def tick_once(self):
         global reset_var
-        reset_var = False
+        print("RESETTING!!!")
+        reset_var = True
 
     def update(self):
-        global reset_var
-        reset_var = True
         return pt.common.Status.FAILURE
+
+            
+
 
 
         

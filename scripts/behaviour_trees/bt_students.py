@@ -51,13 +51,13 @@ class BehaviourTree(ptr.trees.BehaviourTree):
 		# 	children=[tuckarm(), reset()] 
 		# )
 
-		b_8_5 = pt.composites.Selector(name="turn 180deg after pick", children=[counter(30, "count turn"), go("turn 90 deg", 0, -0.5)])
+		b_8_5 = pt.composites.Selector(name="turn 180deg after failed place", children=[counter(30, "count turn"), go("turn 180 deg", 0, -0.5)])
 
 		b_9 = RSequence(
 			name="Place and detect cube",
-			children=[b_8_5, tuckarm(), navigate("Move to pick pose", self.pick_pose_msg)] 
+			children=[movehead("up"), b_8_5, tuckarm(), reset()] 
 		)
-		# check if cube was placed, if not move back
+		# check if cube was placed, if try again
 		b_10 = pt.composites.Selector(
 			name="Check if placing is successful fallback",
 			children=[b_8, b_9]
@@ -66,7 +66,7 @@ class BehaviourTree(ptr.trees.BehaviourTree):
 
 
 		# become the tree
-		tree = RSequence(name="Main sequence", children=[movehead("up"), b_1, b_2, b_3, b_4, b_5, b_6, b_6_5, b_7, b_10])#, b_4, b_5, b_6, b_7, b_10
+		tree = RSequence(name="Main sequence", children=[movehead("up"), b_1, b_2, b_3, b_4, b_5, b_6, b_6_5, b_7, b_10])#, b_4, b_5, b_6, b_6_5, b_7, b_10
 		super(BehaviourTree, self).__init__(tree)
 
 		# execute the behaviour tree
