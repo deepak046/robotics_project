@@ -166,6 +166,8 @@ class movehead(pt.behaviour.Behaviour):
         if reset_var:
             self.tried = False
             self.done = False
+            reset_var = False
+            return pt.common.Status.FAILURE
 
         # success if done
         if self.done:
@@ -216,6 +218,8 @@ class detect_cube(pt.behaviour.Behaviour):
         global reset_var
         if reset_var:
             self.no_cube = None
+            reset_var = False
+            return pt.common.Status.FAILURE
 
         # if cube is detected, return success
         if self.no_cube == True:
@@ -274,7 +278,9 @@ class pick_and_place(pt.behaviour.Behaviour):
         global reset_var
         if reset_var:
             self.tried = False
-            self.done = False                    
+            self.done = False
+            reset_var = False
+            return pt.common.Status.FAILURE
 
         if self.operation == "pick":
             # success if done
@@ -512,18 +518,14 @@ class reset(pt.behaviour.Behaviour):
     def __init__(self):
         super(reset, self).__init__()
 
-    def tick_once(self):
+    def initialise(self):
         global reset_var
         print("RESETTING!!!")
-        reset_var = True
+        reset_var = True        
 
     def update(self):
-        return pt.common.Status.FAILURE
-
-            
-
-
-
-        
-
+        if reset_var:
+            return pt.common.Status.RUNNING
+        else:
+            return pt.common.Status.SUCCESS
 
