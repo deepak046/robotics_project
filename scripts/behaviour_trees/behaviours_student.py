@@ -14,6 +14,8 @@ from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped, Twist
 from std_srvs.srv import Empty, SetBool, SetBoolRequest  
 from move_base_msgs.msg import MoveBaseAction, MoveBaseGoal, MoveBaseActionFeedback
 
+reset_var = False
+
 class counter(pt.behaviour.Behaviour):
 
     """
@@ -120,7 +122,7 @@ class tuckarm(pt.behaviour.Behaviour):
         # if I was succesful! :)))))))))
         elif self.play_motion_ac.get_result():
 
-            # than I'm finished!
+            # then I'm finished!
             self.finished = True
             return pt.common.Status.SUCCESS
 
@@ -160,6 +162,11 @@ class movehead(pt.behaviour.Behaviour):
    
     def update(self):
 
+        global reset_var
+        if reset_var:
+            self.tried = False
+            self.done = False
+
         # success if done
         if self.done:
             return pt.common.Status.SUCCESS
@@ -195,7 +202,7 @@ class detect_cube(pt.behaviour.Behaviour):
     """
     def __init__(self):
         rospy.loginfo("Checking for cube...")
-        self.aruco_pose_rcv = False
+
         # Aruco pose topic
         self.aruco_pose_top = rospy.get_param(rospy.get_name() + '/aruco_pose_topic')
 
@@ -205,6 +212,11 @@ class detect_cube(pt.behaviour.Behaviour):
 
     # def initialise(self):
     def update(self):
+
+        global reset_var
+        if reset_var:
+            self.no_cube = None
+
         # if cube is detected, return success
         if self.no_cube == True:
             return pt.common.Status.FAILURE
@@ -258,6 +270,11 @@ class pick_and_place(pt.behaviour.Behaviour):
 
 
     def update(self):
+
+        global reset_var
+        if reset_var:
+            self.tried = False
+            self.done = False                    
 
         if self.operation == "pick":
             # success if done
@@ -331,69 +348,73 @@ class localize(pt.behaviour.Behaviour):
 
         rospy.loginfo("Initialising move head behaviour.")
 
-        # Global localization server
+        # Global localization service
         self.global_loc_srv_nm = rospy.get_param(rospy.get_name() + '/global_loc_srv')
         self.global_loc_srv = rospy.ServiceProxy(self.global_loc_srv_nm, Empty)
 
-        # Move topic 
+        # Clear costmap service
+        self.clear_cm_srv_nm = rospy.get_param(rospy.get_name() + '/clear_costmaps_srv')
+        self.clear_cm_srv = rospy.ServiceProxy(self.clear_cm_srv_nm, Empty)
 
+        # Move topic 
         self.cmd_vel_top = rospy.get_param(rospy.get_name() + '/cmd_vel_topic')
         self.cmd_vel_pub = rospy.Publisher(self.cmd_vel_top, Twist, queue_size=10)
         self.move_msg = Twist()
         self.move_msg.linear.x = 0
-        self.move_msg.angular.z = 0.35
+        self.move_msg.angular.z = 0.45
 
+        # Subscribe to amcl topic to get the latest amcl estimate
+        self.amcl_pose_top = rospy.get_param(rospy.get_name() + '/amcl_estimate')
+        self.amcl_pose_sub = rospy.Subscriber(self.amcl_pose_top, PoseWithCovarianceStamped, self.amcl_pose_cb)
+
+        # class variables to check if robot is localized and whethter to spread out particles again
         self.localized = False
         self.call_service = True
         # Counter to reset localization service if the robot doesn't localize before a given amount of time
         self.counter = 0
 
-        # AMCL pose estimate topic with covariance
-        self.threshold = 0.025
-        self.covar = 10000
-
-        self.amcl_pose_top = rospy.get_param(rospy.get_name() + '/amcl_estimate')
-        #self.amcl_pose_sub = rospy.Subscriber(self.amcl_pose_top, PoseWithCovarianceStamped, self.amcl_pose_cb)
-        
+        # Threshold for convergence and covariance of amcl pose
+        self.threshold = 0.05
+        self.covar = None
 
         rospy.wait_for_service(self.global_loc_srv_nm, timeout=10)
-        
-        # self.global_loc_srv()
         
         # become a behaviour
         super(localize, self).__init__("Localize!")
     
-    # def amcl_pose_cb(self, pose_msg):
-    #     self.covar = np.reshape(pose_msg.pose.covariance, (6,6))
+    def amcl_pose_cb(self, pose_msg):
+        # covariance matrix of amcl estimate
+        self.covar = np.reshape(pose_msg.pose.covariance, (6,6))
 
     def initialise(self):
+        # spread out particles if not localized and call_service is true
         if self.call_service and not(self.localized):
+            # Spread out particles to start localization
             self.global_loc_srv()
+            # Clear costmap to make sure that navigatino finds a path
+            self.clear_cm_srv()
             self.call_service = False
         
-
     def update(self):
 
         try:
             rate = rospy.Rate(10)
-            self.amcl_pose_msg = rospy.wait_for_message(self.amcl_pose_top, PoseWithCovarianceStamped, timeout=5) 
-            self.covar = np.reshape(self.amcl_pose_msg.pose.covariance, (6,6))
+            # spin around
             if self.localized == False:
                 self.cmd_vel_pub.publish(self.move_msg)
                 self.counter += 1
             rate.sleep()
 
-            print("COVARIANCE", np.trace(self.covar))
+            # check for convergence
             if np.trace(self.covar) < self.threshold:
                 self.localized = True
                 self.call_service = True
                 self.counter = 0
-                print("SUCCCCCEEEEESSSSSSS")
                 return pt.common.Status.SUCCESS
                 
             else:
                 self.localized = False
-                if self.counter > 150:
+                if self.counter > 170:
                     self.counter = 0
                     self.call_service = True
                 if self.call_service:
@@ -412,78 +433,97 @@ class navigate(pt.behaviour.Behaviour):
     success if the action was succesful, and v.v..
     """
     def __init__(self, name, pose_msg):
-        print("INITIALIZING NAVIGATION BEHAVIOUR")
         
         # Action client to request move action
         self.move_client = SimpleActionClient('/move_base', MoveBaseAction)
 
-        # Initialise subscriber to feedback of the move_base action
-        self.move_feedback_top = rospy.get_param(rospy.get_name() + '/move_base_feedback')
-        self.move_feedback_sub = rospy.Subscriber(self.move_feedback_top, MoveBaseActionFeedback, self.move_feedback_cb)
+        self.move_client.wait_for_server()
 
+        # stati of navigation goal
+        self.PENDING=0
+        self.ACTIVE=1
+        self.PREEMPTED=2
+        self.SUCCEEDED=3
+        self.ABORTED=4
+        self.REJECTED=5
+        self.PREEMPTING=6
+        self.RECALLING=7
+        self.RECALLED=8
+        self.LOST=9
+
+        # some class variables
         self.goal_pose_msg = pose_msg
-        self.goal_pose = pose_msg.pose
-        self.current_pose = None
-        self.pose_error = None
-        self.threshold = 0.1
-        
-        print("INITIALIZING NAVIGATION BEHAVIOUR 2")
-        
-        # try: 
-        #     # send goal to move_base server
-        #     self.move_client.wait_for_server()
-
-        #     print("INITIALIZING NAVIGATION BEHAVIOUR 3")
-        #     goal = MoveBaseGoal(pose_msg)
-
-        #     self.move_client.send_goal(goal)
-
-        #     print("SENT GOAL TO MOVE_BASE ACTION")
-            
-        # except rospy.ROSInterruptException:
-        #     rospy.loginfo("Failed to send goal to move_base action.")
+        self.navigation_result_status = None
+        self.finished = False
+        self.sent_goal = False
 
         super(navigate, self).__init__(name)
-    
-    def move_feedback_cb(self, move_feedback):
-        self.current_pose = move_feedback.feedback.base_position.pose
 
-    def initialise(self):
-        try: 
-            # send goal to move_base server
-            self.move_client.wait_for_server()
-
-            print("INITIALIZING NAVIGATION BEHAVIOUR 3")
-            goal = MoveBaseGoal(self.goal_pose_msg)
-
-            self.move_client.send_goal(goal)
-
-            print("SENT GOAL TO MOVE_BASE ACTION")
-            
-        except rospy.ROSInterruptException:
-            rospy.loginfo("Failed to send goal to move_base action.")
-
-<<<<<<< HEAD
-        return
-=======
-        super(navigate, self).__init__(name)
-    
-    def move_feedback_cb(self, move_feedback):
-        self.current_pose = move_feedback.feedback.base_position.pose
->>>>>>> d41cc8235dbac0fca3e38eaccd1ef11fb7b85d66
+    def nav_result_cb(self, state, result):
+        self.navigation_result_status = state
 
     def update(self):
-        current_position = self.current_pose.position
-        print("CURRENT POSITION", current_position)
-        goal_position = self.goal_pose.position
-        print("GOAL POSITION", goal_position)
-        self.position_error = LA.norm(current_position - goal_position)
-        self.orientation_error = LA.norm(self.current_pose.orientation - self.goal_pose.orientation)
-        self.pose_error = np.sqrt(self.position_error**2 + self.orientation_error**2)
 
-        if self.pose_error < self.threshold:
-            self.move_client.cancel_goal()
+        global reset_var
+        if reset_var:
+            print("RESETTETTED!!!!")
+            self.navigation_result_status = None
+            self.finished = False
+            self.sent_goal = False
+            reset_var = False
+            return pt.common.Status.FAILURE
+
+        # if already at goal
+        if self.finished:
             return pt.common.Status.SUCCESS
 
+        # if goal not sent yet, send it, dude
+        elif not self.sent_goal:
+            try: 
+                goal = MoveBaseGoal(self.goal_pose_msg)
+
+                self.move_client.send_goal(goal,
+                    done_cb=self.nav_result_cb)
+
+                self.sent_goal = True
+
+                # let tree know we're running like Forrest Gump
+                return pt.common.Status.RUNNING
+                
+            except rospy.ROSInterruptException:
+                rospy.loginfo("Failed to send goal to move_base action.")
+                return pt.common.Status.FAILURE
+        
+        # if action server returns SUCCEEDED, finish
+        elif self.navigation_result_status == self.SUCCEEDED:
+            self.finished = True
+            return pt.common.Status.SUCCESS
+
+        # let's hope, this doesn't happen
+        elif self.navigation_result_status == (self.PREEMPTED or self.ABORTED or self.LOST):
+            return pt.common.Status.FAILURE
+
+        # keep running otherwise
         else:
             return pt.common.Status.RUNNING
+
+class reset(pt.behaviour.Behaviour):
+
+    def __init__(self):
+        super(reset, self).__init__()
+
+    def tick_once(self):
+        global reset_var
+        print("RESETTING!!!")
+        reset_var = True
+
+    def update(self):
+        return pt.common.Status.FAILURE
+
+            
+
+
+
+        
+
+
