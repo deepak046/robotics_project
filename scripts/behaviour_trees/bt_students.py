@@ -51,7 +51,7 @@ class BehaviourTree(ptr.trees.BehaviourTree):
 		# move sequence to turn 180 deg and move straight to table
 		move_table_1 = RSequence(
 					   name="turn and move sequence",
-					   children=[turn_1 ,move_straight_1]
+					   children=[turn_1 , tuckarm(), move_straight_1]
 		)
 
 		move_table_2 = RSequence(
