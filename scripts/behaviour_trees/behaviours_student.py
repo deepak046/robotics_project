@@ -286,7 +286,7 @@ class pick_and_place(pt.behaviour.Behaviour):
                 return pt.common.Status.RUNNING
 
         elif self.operation == "place":
-                        # success if done
+            # success if done
             if self.done:
                 return pt.common.Status.SUCCESS
 
@@ -308,7 +308,6 @@ class pick_and_place(pt.behaviour.Behaviour):
 
             # if failed
             elif not self.place_srv_req.success:
-                rospy.loginfo("Faiiiiil!!!!!!!!!!")
                 return pt.common.Status.FAILURE
 
             # if still trying
