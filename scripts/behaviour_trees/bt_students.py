@@ -23,7 +23,7 @@ class BehaviourTree(ptr.trees.BehaviourTree):
 		b_2 = localize()
 
 		# Navigate to pick pose
-		b_3 = navigate("Move to pick pose", self.pick_pose_msg)
+		b_3 = navigate("Move to pick pose", self.pick_pose_msg, "pick")
 
 		# move head down to detect cube
 		b_4 = movehead("down")
@@ -36,9 +36,9 @@ class BehaviourTree(ptr.trees.BehaviourTree):
 
 		b_6 = movehead("up")
 
-		b_6_5 = pt.composites.Selector(name="turn 90deg after pick", children=[counter(20, "count turn"), go("turn 90 deg", 0, -0.5)])
+		b_6_5 = pt.composites.Selector(name="turn 90deg after pick", children=[counter(15, "count turn"), go("turn 90 deg", 0, -0.5)])
 
-		b_7 = navigate("Move to place pose", self.place_pose_msg)
+		b_7 = navigate("Move to place pose", self.place_pose_msg, "place")
 
 		# place the cube on the table, if no success, move back
 		b_8 = RSequence(
@@ -55,15 +55,13 @@ class BehaviourTree(ptr.trees.BehaviourTree):
 
 		b_9 = RSequence(
 			name="Place and detect cube",
-			children=[movehead("up"), b_8_5, tuckarm(), reset()] 
+			children=[movehead("up"), b_8_5, tuckarm(), respawn_cube(), reset()] 
 		)
 		# check if cube was placed, if try again
 		b_10 = pt.composites.Selector(
 			name="Check if placing is successful fallback",
 			children=[b_8, b_9]
 		)
-
-
 
 		# become the tree
 		tree = RSequence(name="Main sequence", children=[movehead("up"), b_1, b_2, b_3, b_4, b_5, b_6, b_6_5, b_7, b_10])#, b_4, b_5, b_6, b_6_5, b_7, b_10

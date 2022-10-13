@@ -13,8 +13,14 @@ from robotics_project.srv import MoveHead, MoveHeadRequest, MoveHeadResponse
 from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped, Twist
 from std_srvs.srv import Empty, SetBool, SetBoolRequest  
 from move_base_msgs.msg import MoveBaseAction, MoveBaseGoal, MoveBaseActionFeedback
+from gazebo_msgs.srv import SetModelState
+from gazebo_msgs.msg import ModelState
 
+call_reset = False
+reset_success = False
 reset_var = False
+reset_beh_list = ["movehead_up_2", "spawn", "navigate_pick", "movehead_down", "pick", "movehead_up", "navigate_place", "place", "movehead_down_2", "detect_cube"]
+reset_beh = None
 
 class counter(pt.behaviour.Behaviour):
 
@@ -146,6 +152,8 @@ class movehead(pt.behaviour.Behaviour):
 
         rospy.loginfo("Initialising move head behaviour.")
 
+        # Variables for the operation for resetting in the correct order
+        self.reset_oper = None
         # server
         mv_head_srv_nm = rospy.get_param(rospy.get_name() + '/move_head_srv')
         self.move_head_srv = rospy.ServiceProxy(mv_head_srv_nm, MoveHead)
@@ -162,10 +170,33 @@ class movehead(pt.behaviour.Behaviour):
    
     def update(self):
 
-        global reset_var
+        global reset_beh, reset_var, reset_beh_list
         if reset_var:
-            self.tried = False
-            self.done = False
+            if reset_beh == "movehead_down":
+                self.reset_oper = 0
+                self.direction = "down"
+                self.tried = False
+                self.done = False
+                reset_beh = None
+                print("starting movehead down")
+            elif reset_beh == "movehead_up":
+                self.reset_oper = 1
+                self.direction = "up"
+                self.tried = False
+                self.done = False
+                reset_beh = None
+            elif reset_beh == "movehead_down_2":
+                self.reset_oper = 2
+                self.direction = "down"
+                self.tried = False
+                self.done = False
+                reset_beh = None
+            elif reset_beh == "movehead_up_2":
+                self.reset_oper = 3
+                self.direction = "up"
+                self.tried = False
+                self.done = False
+                reset_beh = None
 
         # success if done
         if self.done:
@@ -184,6 +215,16 @@ class movehead(pt.behaviour.Behaviour):
         # if succesful
         elif self.move_head_req.success:
             self.done = True
+            if reset_var:
+                if self.reset_oper == 0:
+                    reset_beh = reset_beh_list[4] 
+                elif self.reset_oper == 1:
+                    reset_beh = reset_beh_list[6]
+                elif self.reset_oper == 2:
+                    reset_beh = reset_beh_list[9]
+                elif self.reset_oper == 3:
+                    reset_beh = reset_beh_list[1]
+
             return pt.common.Status.SUCCESS
 
         # if failed
@@ -213,9 +254,10 @@ class detect_cube(pt.behaviour.Behaviour):
     # def initialise(self):
     def update(self):
 
-        global reset_var
-        if reset_var:
+        global reset_beh, reset_var, reset_beh_list, reset_success, call_reset
+        if reset_var and reset_beh == "detect_cube":
             self.no_cube = None
+            reset_var = False 
 
         # if cube is detected, return success
         if self.no_cube == True:
@@ -223,9 +265,11 @@ class detect_cube(pt.behaviour.Behaviour):
         try:
             rospy.wait_for_message(self.aruco_pose_top, PoseStamped, timeout=10)
             rospy.loginfo("Detected the cube")
-            self.no_cube == False
+            self.no_cube = False
+            reset_success = True
             return pt.common.Status.SUCCESS
         except:
+            call_reset = True
             self.no_cube = True
             rospy.loginfo("Couldn't detect the cube")
             return pt.common.Status.FAILURE
@@ -238,25 +282,25 @@ class pick_and_place(pt.behaviour.Behaviour):
     """
     def __init__(self, operation_str):
             # Picking service
-        self.pick_srv = rospy.get_param(rospy.get_name() + '/pick_srv')
+        self.pick_srv_nm = rospy.get_param(rospy.get_name() + '/pick_srv')
             # Placing service
-        self.place_srv = rospy.get_param(rospy.get_name() + '/place_srv')
+        self.place_srv_nm = rospy.get_param(rospy.get_name() + '/place_srv')
 
             # Operation being done                
         self.operation = operation_str
 
 
         # Wait for service providers
-        rospy.wait_for_service(self.pick_srv, timeout=30)
-        rospy.wait_for_service(self.place_srv, timeout=30)
+        rospy.wait_for_service(self.pick_srv_nm, timeout=30)
+        rospy.wait_for_service(self.place_srv_nm, timeout=30)
 
         if self.operation == "pick":
             rospy.loginfo("Picking the cube...")
-            self.pick_srv = rospy.ServiceProxy(self.pick_srv, SetBool)
+            self.pick_srv = rospy.ServiceProxy(self.pick_srv_nm, SetBool)
         
         elif self.operation == "place":
             rospy.loginfo("Placing the cube...")
-            self.place_srv = rospy.ServiceProxy(self.place_srv, SetBool)     
+            self.place_srv = rospy.ServiceProxy(self.place_srv_nm, SetBool)     
 
         else:
             rospy.logerr("Invalid operation")       
@@ -271,10 +315,18 @@ class pick_and_place(pt.behaviour.Behaviour):
 
     def update(self):
 
-        global reset_var
+        global reset_beh, reset_var, reset_beh_list
         if reset_var:
-            self.tried = False
-            self.done = False                    
+            if reset_beh == "pick":
+                self.tried = False
+                self.done = False
+                self.operation == "pick"
+                reset_beh = None      
+            elif reset_beh == "place":
+                self.tried = False
+                self.done = False
+                self.operation == "place"
+                reset_beh = None                       
 
         if self.operation == "pick":
             # success if done
@@ -294,6 +346,8 @@ class pick_and_place(pt.behaviour.Behaviour):
             # if succesful
             elif self.pick_srv_req.success:
                 self.done = True
+                if reset_var: 
+                    reset_beh = reset_beh_list[5]
                 rospy.loginfo("Pick service successful")
                 return pt.common.Status.SUCCESS
 
@@ -323,12 +377,13 @@ class pick_and_place(pt.behaviour.Behaviour):
             # if succesful
             elif self.place_srv_req.success:
                 self.done = True
+                if reset_var:
+                    reset_beh = reset_beh_list[8]
                 rospy.loginfo("Place service successful")
                 return pt.common.Status.SUCCESS
 
             # if failed
             elif not self.place_srv_req.success:
-                rospy.loginfo("Faiiiiil!!!!!!!!!!")
                 return pt.common.Status.FAILURE
 
             # if still trying
@@ -432,13 +487,15 @@ class navigate(pt.behaviour.Behaviour):
     Returns running whilst awaiting the result,
     success if the action was succesful, and v.v..
     """
-    def __init__(self, name, pose_msg):
+    def __init__(self, name, pose_msg, oper):
         
         # Action client to request move action
         self.move_client = SimpleActionClient('/move_base', MoveBaseAction)
 
         self.move_client.wait_for_server()
 
+        # Operation
+        self.oper = oper
         # stati of navigation goal
         self.PENDING=0
         self.ACTIVE=1
@@ -464,14 +521,19 @@ class navigate(pt.behaviour.Behaviour):
 
     def update(self):
 
-        global reset_var
+        global reset_beh, reset_var, reset_beh_list
         if reset_var:
-            print("RESETTETTED!!!!")
-            self.navigation_result_status = None
-            self.finished = False
-            self.sent_goal = False
-            reset_var = False
-            return pt.common.Status.FAILURE
+            if self.oper == "pick" and reset_beh == "navigate_pick":
+                print("RESETTING NAVIGATION TO PICK POSE")
+                self.navigation_result_status = None
+                self.finished = False
+                self.sent_goal = False
+                reset_beh = None
+            elif self.oper == "place" and reset_beh == "navigate_place":
+                self.navigation_result_status = None
+                self.finished = False
+                self.sent_goal = False
+                reset_beh = None
 
         # if already at goal
         if self.finished:
@@ -497,6 +559,12 @@ class navigate(pt.behaviour.Behaviour):
         # if action server returns SUCCEEDED, finish
         elif self.navigation_result_status == self.SUCCEEDED:
             self.finished = True
+            if reset_var and self.oper == "pick":
+                reset_beh = reset_beh_list[3]
+                print("moving to : %s", reset_beh)
+            elif reset_var and self.oper == "place":
+                reset_beh = reset_beh_list[7]
+
             return pt.common.Status.SUCCESS
 
         # let's hope, this doesn't happen
@@ -507,23 +575,77 @@ class navigate(pt.behaviour.Behaviour):
         else:
             return pt.common.Status.RUNNING
 
+           
+class respawn_cube(pt.behaviour.Behaviour):
+    
+    def __init__(self):
+        self.spawn_srv_nm = '/gazebo/set_model_state'
+        rospy.wait_for_service(self.spawn_srv_nm, timeout=30)
+
+        self.spawn_srv = rospy.ServiceProxy(self.spawn_srv_nm, SetModelState)
+
+        self.cube_model = ModelState()
+        self.cube_model.model_name = "aruco_cube"
+        self.cube_model.pose.position.x = -1.130530 
+        self.cube_model.pose.position.y = -6.653650
+        self.cube_model.pose.position.z =  0.862500    
+        self.cube_model.reference_frame = "map"
+
+        self.tried = False
+        self.done = False
+        
+        # become a bereset_varhaviour
+        super(respawn_cube, self).__init__("Respawn cube")
+   
+    def update(self):
+
+        global reset_beh, reset_var, reset_beh_list
+        if reset_var and reset_beh == "spawn":
+            self.tried = False
+            self.done = False
+            reset_beh = reset_beh_list[2] 
+
+        # success if done
+        if self.done:
+            return pt.common.Status.SUCCESS
+
+        # try if not tried
+        elif not self.tried:
+
+            # command
+            self.spawn_srv_req = self.spawn_srv(self.cube_model)
+            self.tried = True
+
+            # tell the tree you're running
+            return pt.common.Status.RUNNING
+
+        # if succesful
+        elif self.spawn_srv_req.success:
+            self.done = True
+            return pt.common.Status.SUCCESS
+
+        # if failed
+        elif not self.spawn_srv_req.success:
+            return pt.common.Status.FAILURE
+
+        # if still trying
+        else:
+            return pt.common.Status.RUNNING
+
 class reset(pt.behaviour.Behaviour):
 
     def __init__(self):
         super(reset, self).__init__()
 
-    def tick_once(self):
-        global reset_var
-        print("RESETTING!!!")
-        reset_var = True
-
     def update(self):
-        return pt.common.Status.FAILURE
 
-            
-
-
-
-        
-
-
+        global reset_beh, reset_var, reset_beh_list, reset_success, call_reset
+        if call_reset:
+            reset_var = True
+            reset_beh = reset_beh_list[1]
+            call_reset = False
+            print("Reset is running")
+            return pt.common.Status.FAILURE
+        if reset_success and not(call_reset):
+            print("Reset has succeeded")
+            return pt.common.Status.SUCCESS
