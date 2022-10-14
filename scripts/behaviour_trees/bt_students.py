@@ -45,17 +45,10 @@ class BehaviourTree(ptr.trees.BehaviourTree):
 			name="Place and detect cube",
 			children=[pick_and_place("place"), movehead("down"), detect_cube()] 
 		)
-		
-		# b_9 = RSequence(
-		# 	name="Place and detect cube",
-		# 	children=[tuckarm(), reset()] 
-		# )
-
-		b_8_5 = pt.composites.Selector(name="turn 180deg after failed place", children=[counter(30, "count turn"), go("turn 180 deg", 0, -0.5)])
 
 		b_9 = RSequence(
 			name="Place and detect cube",
-			children=[respawn_cube(), reset()] 
+			children=[respawn_cube(), reset()]
 		)
 		# check if cube was placed, if try again
 		b_10 = pt.composites.Selector(
