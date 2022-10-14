@@ -55,7 +55,7 @@ class BehaviourTree(ptr.trees.BehaviourTree):
 
 		b_9 = RSequence(
 			name="Place and detect cube",
-			children=[movehead("up"), b_8_5, tuckarm(), respawn_cube(), reset()] 
+			children=[respawn_cube(), reset()] 
 		)
 		# check if cube was placed, if try again
 		b_10 = pt.composites.Selector(
